@@ -33,12 +33,19 @@ public final class CollisionFix implements Listener {
 
         if (bambooEnabled) {
             try {
-                final Class<?> bambooBlockClass = NMSReflection.getNMSClass("world.level.block", "BlockBamboo");
+                final Class<?> bambooBlockClass = NMSReflection.getNMSClass("world.level.block", "BlockBamboo", "BambooStalkBlock");
                 final boolean newerThanOrEqualTo1170 = NMSReflection.mojmap;
                 // Codec field being first bumps all fields - as of 1.20.4
                 final boolean newerThanOrEqualTo1204 = Arrays.stream(bambooBlockClass.getFields()).anyMatch(field -> field.getType().getSimpleName().equals("MapCodec"));
                 final boolean newerThanOrEqualTo1215 = NMSReflection.getNMSClass("world.level.block", "LeafLitterBlock") != null;
-                final Field bambooBoundingBox = ReflectionAPI.getFieldAccessible(bambooBlockClass, newerThanOrEqualTo1215 ? "S" : newerThanOrEqualTo1204 ? "g" : newerThanOrEqualTo1170 ? "f" : "c"); // Bounding box for "no leaves", according to Yarn.
+                // On mojmap (26.1+) the field has its real name; on Spigot mappings it's obfuscated
+                String fieldName;
+                if (bambooBlockClass.getName().contains("BambooStalkBlock")) {
+                    fieldName = "SHAPE_COLLISION"; // mojmap name
+                } else {
+                    fieldName = newerThanOrEqualTo1215 ? "S" : newerThanOrEqualTo1204 ? "g" : newerThanOrEqualTo1170 ? "f" : "c";
+                }
+                final Field bambooBoundingBox = ReflectionAPI.getFieldAccessible(bambooBlockClass, fieldName);
                 applyNoBoundingBox(bambooBoundingBox);
                 plugin.getLogger().info("Bamboo collision hack enabled.");
             } catch (Exception e) {
@@ -137,11 +144,18 @@ public final class CollisionFix implements Listener {
             Method createVoxelShape;
             try {
                 // 1.18+ - obfuscated methods
-                createVoxelShape = ReflectionAPI.getMethod(NMSReflection.getNMSClass("world.phys.shapes", "VoxelShapes"), "b",
+                Class<?> shapesClass = NMSReflection.getNMSClass("world.phys.shapes", "VoxelShapes", "Shapes");
+                createVoxelShape = ReflectionAPI.getMethod(shapesClass, "b",
                         double.class, double.class, double.class, double.class, double.class, double.class);
             } catch (NoSuchMethodException e) {
-                createVoxelShape = ReflectionAPI.getMethod(NMSReflection.getNMSClass("world.phys.shapes", "VoxelShapes"), "create",
-                        double.class, double.class, double.class, double.class, double.class, double.class);
+                Class<?> shapesClass = NMSReflection.getNMSClass("world.phys.shapes", "VoxelShapes", "Shapes");
+                try {
+                    createVoxelShape = ReflectionAPI.getMethod(shapesClass, "box",
+                            double.class, double.class, double.class, double.class, double.class, double.class);
+                } catch (NoSuchMethodException e2) {
+                    createVoxelShape = ReflectionAPI.getMethod(shapesClass, "create",
+                            double.class, double.class, double.class, double.class, double.class, double.class);
+                }
             }
             Object boundingBox = ReflectionAPI.invokeMethod(createVoxelShape, x1, y1, z1, x2, y2, z2);
             ReflectionAPI.setFinalValue(field, boundingBox);
